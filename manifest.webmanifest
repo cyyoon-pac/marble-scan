@@ -1,0 +1,17 @@
+{
+  "name": "마블 스캔",
+  "short_name": "마블 스캔",
+  "description": "소고기 단면 사진으로 마블링·육색·지방색을 분석해 육질등급 구간을 추정합니다.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef0f1",
+  "theme_color": "#a3202b",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

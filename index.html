@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>마블 스캔</title>
+<meta name="theme-color" content="#a3202b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="마블 스캔">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+/* 정육 매장 검수대: 위쪽 뷰파인더, 아래쪽 판정표. 넓은 화면에서는 두 열. */
+:root {
+  --bg: #eef0f1; --surface: #ffffff; --ink: #1b1f22; --muted: #5d666d; --line: #d5dadd;
+  --meat: #a3202b; --fat: #0d8fa6; --good: #2e7d4f; --warn: #a86a00; --bad: #b3261e; --chip: #e3e7e9;
+  --m-eye: #3b7dd8; --m-cap: #d6409f; --m-sal: #2f9e4f; --m-tough: #e08a1e; --m-seam: #f2f2f2; --m-tteok: #f2c200;
+  --font-body: "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #141719; --surface: #1d2124; --ink: #e8ebed; --muted: #9aa3a9; --line: #30363a;
+  --meat: #e0606a; --fat: #4fc3d9; --good: #5fbf86; --warn: #e0a640; --bad: #f07a70; --chip: #272c30;
+  color-scheme: dark } }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1040px; margin: 0 auto;
+  padding-top: max(14px, env(safe-area-inset-top)); padding-bottom: max(28px, env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+h1 span { color: var(--meat); }
+.ver { font-size: 12px; color: var(--muted); }
+.grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 760px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; min-width: 0; }
+.panel + .panel { margin-top: 16px; }
+.label { font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); }
+.chips { display: grid; gap: 6px; margin: 6px 0 10px; }
+.chips.c4 { grid-template-columns: repeat(4, 1fr); }
+.chips.c3 { grid-template-columns: repeat(3, 1fr); }
+.chips button { font: inherit; font-size: 14px; font-weight: 600; padding: 9px 4px; border-radius: 8px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink); cursor: pointer; }
+.chips button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.chips.small button { font-size: 13px; padding: 7px 4px; }
+.subrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.subrow .chips { flex: 1; min-width: 220px; margin: 6px 0 10px; }
+.cuthint { font-size: 12.5px; color: var(--muted); margin: -2px 0 10px; }
+.finder { position: relative; background: #0d0f10; border-radius: 10px; overflow: hidden; aspect-ratio: 4 / 3; max-width: 100%; }
+.finder video, .finder canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#result { object-fit: contain; touch-action: manipulation; }
+.finder .msg { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #cfd5d9; font-size: 14px; }
+.qual { position: absolute; left: 8px; right: 8px; top: 8px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.qual span { font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; background: rgba(0,0,0,.62); color: #fff; }
+.qual span.ok::before { content: "●"; color: #5fd08a; margin-right: 4px; }
+.qual span.ng::before { content: "●"; color: #ffb648; margin-right: 4px; }
+.actions { display: flex; gap: 8px; margin-top: 10px; }
+.btn { font: inherit; font-weight: 700; font-size: 15px; border-radius: 10px; padding: 12px 14px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--chip); color: var(--ink); text-align: center; }
+.btn.primary { flex: 1; background: var(--meat); border-color: var(--meat); color: #fff; }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn:focus-visible, .chips button:focus-visible, .seg button:focus-visible { outline: 2px solid var(--fat); outline-offset: 2px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; padding: 6px 12px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--chip); color: var(--ink); font-weight: 700; }
+.viewrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.viewhint { font-size: 12.5px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; border: 1px solid var(--line); }
+.shots { display: flex; gap: 6px; margin-top: 10px; }
+.shots canvas { width: 64px; height: 48px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; background: #111; }
+.shots canvas.sel { border-color: var(--meat); }
+.verdict { display: flex; align-items: center; gap: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.grade { font-family: var(--font-num); font-size: 40px; font-weight: 700; line-height: 1; color: var(--meat); min-width: 2.4em; }
+.verdict strong { font-size: 16px; }
+.verdict p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.scale { margin: 14px 0 4px; }
+.bar { position: relative; display: grid; height: 30px; border-radius: 6px; border: 1px solid var(--line); margin-top: 8px; }
+.bar span { display: grid; place-items: center; font-family: var(--font-num); font-size: 12px; color: var(--muted); border-right: 1px solid var(--line); overflow: hidden; }
+.bar span:last-child { border-right: 0; }
+.bar span.on { background: var(--meat); color: #fff; font-weight: 700; }
+.marker { position: absolute; top: -5px; bottom: -5px; width: 3px; background: var(--ink); border-radius: 2px; transform: translateX(-1px); }
+.range { position: absolute; top: 50%; height: 4px; transform: translateY(-50%); background: var(--ink); opacity: .35; border-radius: 2px; }
+.ticks { position: relative; height: 18px; font-family: var(--font-num); font-size: 11px; color: var(--muted); margin-top: 4px; }
+.ticks span { position: absolute; transform: translateX(-50%); }
+.metrics { list-style: none; margin: 12px 0 0; padding: 0; }
+.metrics li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.metrics li:first-child { border-top: 0; }
+.metrics .k { font-weight: 700; font-size: 14px; }
+.metrics .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 14px; text-align: right; }
+.metrics .d { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; }
+.pill { display: inline-block; font-family: var(--font-body); font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.pill.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.empty { color: var(--muted); font-size: 14px; padding: 18px 0 6px; }
+.struct h2 { font-size: 15px; margin: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tier { display: flex; gap: 12px; align-items: flex-start; margin-top: 12px; }
+.tier .rank { font-family: var(--font-num); font-size: 28px; font-weight: 700; line-height: 1; color: var(--meat); min-width: 1.4em; }
+.tier strong { font-size: 15px; }
+.tier p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.comp { display: flex; height: 14px; border-radius: 4px; overflow: hidden; margin: 14px 0 6px; border: 1px solid var(--line); }
+.comp span { display: block; height: 100%; }
+.facts { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 4px; font-size: 13px; }
+.facts li { display: flex; justify-content: space-between; gap: 10px; }
+.facts li span:last-child { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.tip { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--chip); font-size: 13px; }
+.rankref { margin: 10px 0 0; padding-left: 1.3em; font-size: 12.5px; color: var(--muted); }
+.rankref li.me { color: var(--ink); font-weight: 700; }
+.note { margin-top: 14px; font-size: 12.5px; color: var(--muted); }
+.note p { margin: 6px 0 0; }
+.err { color: var(--bad); font-weight: 700; margin-top: 10px; font-size: 14px; }
+.install { margin-top: 12px; font-size: 12.5px; color: var(--muted); }
+.savemsg { margin: 8px 0 0; font-size: 13px; color: var(--good); font-weight: 600; }
+.savemsg.bad { color: var(--bad); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>마블 스캔 <span>단면 품질 추정</span></h1>
+    <span class="ver">v0.3.1 프로토타입</span>
+  </header>
+
+  <div class="grid">
+    <section class="panel" aria-label="촬영">
+      <span class="label">부위</span>
+      <div class="chips c4" role="group" aria-label="부위 선택" id="cuts">
+        <button type="button" data-cut="loin">등심</button>
+        <button type="button" data-cut="strip">채끝</button>
+        <button type="button" data-cut="tender">안심</button>
+        <button type="button" data-cut="other">기타</button>
+      </div>
+      <div id="loinBox">
+        <div class="subrow">
+          <div class="seg" role="group" aria-label="원산지" id="origin">
+            <button type="button" data-o="kr">한우</button>
+            <button type="button" data-o="us">미국산</button>
+          </div>
+        </div>
+        <span class="label" style="display:block;margin-top:10px">등심 위치</span>
+        <div class="chips c4 small" role="group" aria-label="등심 위치" id="posKr">
+          <button type="button" data-p="auto">자동</button>
+          <button type="button" data-p="upper">윗등심</button>
+          <button type="button" data-p="flower">꽃등심</button>
+          <button type="button" data-p="lower">아랫등심</button>
+        </div>
+        <div class="chips c3 small" role="group" aria-label="등심 위치" id="posUs">
+          <button type="button" data-p="auto">자동</button>
+          <button type="button" data-p="chuck">척아이롤</button>
+          <button type="button" data-p="ribeye">립아이</button>
+        </div>
+      </div>
+      <p class="cuthint" id="cuthint"></p>
+
+      <div class="finder" id="finder">
+        <video id="video" playsinline muted autoplay></video>
+        <canvas id="overlay"></canvas>
+        <canvas id="result" hidden></canvas>
+        <div class="msg" id="finderMsg">카메라를 켜는 중입니다…</div>
+        <div class="qual" id="qual" hidden></div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="shoot" type="button" disabled>3장 연속 촬영</button>
+        <label class="btn" for="file">사진 선택</label>
+        <input id="file" type="file" accept="image/*" hidden>
+      </div>
+      <div class="actions" id="afterShot" hidden>
+        <button class="btn primary" id="save" type="button">사진 저장</button>
+        <button class="btn" id="again" type="button" style="flex:1">다시 촬영</button>
+      </div>
+      <p class="savemsg" id="saveMsg" role="status" hidden></p>
+      <div class="viewrow" id="viewRow" hidden>
+        <div class="seg" role="group" aria-label="보기 전환" id="views">
+          <button type="button" data-v="fat">지방</button>
+          <button type="button" data-v="muscle">근육 구분</button>
+          <button type="button" data-v="orig">원본</button>
+        </div>
+        <span class="viewhint" id="viewHint"></span>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="shots" id="shots"></div>
+      <div class="err" id="err" hidden></div>
+      <p class="install" id="install">휴대폰 브라우저의 공유 메뉴에서 "홈 화면에 추가"를 누르면 앱처럼 설치됩니다.</p>
+    </section>
+
+    <div>
+      <section class="panel" aria-label="판정 결과">
+        <div class="verdict">
+          <div class="grade" id="grade">–</div>
+          <div><strong id="gradeTitle">촬영을 기다리는 중</strong><p id="gradeSub">단면 한 조각을 가이드 안에 맞추고 촬영하세요.</p></div>
+        </div>
+        <div class="scale">
+          <span class="label" id="scaleLabel">근내지방 면적비 기준 구간</span>
+          <div class="bar" id="bar"></div>
+          <div class="ticks" id="ticks" aria-hidden="true"></div>
+        </div>
+        <ul class="metrics" id="metrics"><li class="empty">결과가 여기에 표시됩니다. 사진은 기기 안에서만 처리되고 외부로 전송되지 않습니다.</li></ul>
+      </section>
+
+      <section class="panel struct" aria-label="등심 구조" id="structPanel" hidden>
+        <h2>등심 구조와 가치 <span class="pill warn" id="posPill"></span></h2>
+        <div class="tier"><div class="rank" id="tierRank">–</div><div><strong id="tierTitle"></strong><p id="tierDesc"></p></div></div>
+        <div class="comp" id="comp"></div>
+        <ul class="facts" id="facts"></ul>
+        <div class="tip" id="tip"></div>
+        <ol class="rankref" id="rankref">
+          <li data-r="1">새우살이 크고 덧살이 적은 꽃등심</li>
+          <li data-r="2">살치살이 사선으로 넓게 붙은 윗등심</li>
+          <li data-r="3">새우살이 큰 아랫등심</li>
+          <li data-r="4">살치살이 적거나 마블링이 그물 모양인 윗등심</li>
+        </ol>
+        <p class="note" style="margin-top:8px">순위는 블로그 「좋은 등심 고르는 법」(원출처: 잡식채널 Zattwo 영상)의 기준입니다. 덩어리 비율 경계값은 실측 보정 전 임시값입니다.</p>
+      </section>
+
+      <section class="panel note" aria-label="판정 기준" style="margin-top:16px">
+        <span class="label">판정 기준</span>
+        <p id="basis"></p>
+        <p>촬영 요령: 한 조각만 틀에 넣고, 단면을 위에서 수직으로, 플래시는 끄고 밝은 실내 조명에서 찍으세요.</p>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="scan-core.js"></script>
+<script>
+(() => {
+  // ---------------- 부위·등급 설정 ----------------
+  const OFFICIAL = [[5, '3', 'No.1'], [9, '2', 'No.2~3'], [12.3, '1', 'No.4~5'], [15.6, '1+', 'No.6'], [30, '1++', 'No.7~9']];
+  const CUTS = {
+    loin:   { name: '등심', official: true, hint: '' , bands: OFFICIAL },
+    strip:  { name: '채끝', official: true, hint: '등심과 같은 근육(배최장근)이라 등심 기준을 적용합니다.', bands: OFFICIAL },
+    tender: { name: '안심', official: false, hint: '마블링이 원래 적은 부위입니다. 안심끼리 비교한 상대 수준으로 보여줍니다.',
+      bands: [[3, '하', ''], [6, '중', ''], [10, '상', ''], [18, '최상', '']] },
+    other:  { name: '기타', official: false, hint: '부채살 등은 가운데 힘줄이 지방으로 잡힐 수 있어 참고용입니다.',
+      bands: [[5, '하', ''], [10, '중', ''], [16, '상', ''], [26, '최상', '']] },
+  };
+  const USDA = { '1++': 'Prime 수준', '1+': 'Choice 수준', '1': 'Select 수준', '2': 'Select 미만', '3': 'Select 미만' };
+
+  // 등심 위치별 정보 (블로그 「좋은 등심 고르는 법」 기준)
+  const POS = {
+    upper:  { name: '윗등심', labels: ['eye', 'sal', 'tough'], tough: '질긴 근(널판근·마름모근)',
+      hint: '등뼈 1~5번. 살치살이 붙어 있습니다.',
+      tip: '윗등심은 목심에 가까운 1·2번 등뼈일수록 널판근·마름모근 같은 질긴 근육이 많습니다. 살치살이 사선으로 넓게 붙은 3번 등뼈 부근이 가장 좋습니다.' },
+    flower: { name: '꽃등심', labels: ['eye', 'cap', 'tough'], tough: '등심덧살',
+      hint: '등뼈 6~9번. 새우살·알등심·등심덧살로 이뤄집니다.',
+      tip: '꽃등심은 새우살이 크고 등심덧살이 적을수록 좋습니다. 식감은 새우살 > 알등심 > 등심덧살 순입니다.' },
+    lower:  { name: '아랫등심', labels: ['eye', 'cap'], tough: '',
+      hint: '등뼈 10~13번. 떡심이 없고 새우살과 알등심으로 이뤄집니다.',
+      tip: '아랫등심은 새우살이 클수록 좋습니다. 뒤쪽(12번 등뼈)으로 갈수록 새우살이 작아지고 알등심이 커집니다.' },
+    chuck:  { name: '척아이롤', labels: ['eye', 'sal', 'tough'], tough: '질긴 근(목심 쪽)',
+      hint: '미국 정형 기준으로 목심과 윗등심(등뼈 1~5번)을 포함합니다.',
+      tip: '척아이롤은 값이 싸지만 목심 쪽은 질깁니다. 살치살이 사선으로 넓게 붙은 2~3번 등뼈 쪽을 고르면 싸게 좋은 등심을 먹을 수 있습니다. 미국산은 떡심이 없습니다.' },
+    ribeye: { name: '립아이', labels: ['eye', 'cap', 'tough'], tough: '덧살',
+      hint: '미국 정형 기준으로 한우의 꽃등심과 아랫등심에 해당합니다.',
+      tip: '립아이도 새우살이 크고 덧살이 적은 것이 좋습니다.' },
+  };
+  const LNAME = { eye: '알등심', cap: '새우살', sal: '살치살' };
+  const LCOLOR = { eye: '--m-eye', cap: '--m-cap', sal: '--m-sal', tough: '--m-tough' };
+  // 가치 판정 경계값(근육 면적 대비 비율). 실측 보정 전 임시값
+  const TH = { capGood: 0.20, toughLow: 0.15, salGood: 0.25, toughHigh: 0.30, capLower: 0.15, tteok: 0.4 };
+
+  const store = { get(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  let cut = CUTS[store.get('ms.cut')] ? store.get('ms.cut') : 'loin';
+  let origin = store.get('ms.origin', 'kr') === 'us' ? 'us' : 'kr';
+  let pos = store.get('ms.pos', 'auto');
+  let view = 'fat';
+
+  // ---------------- 요소 ----------------
+  const $ = id => document.getElementById(id);
+  const video = $('video'), overlay = $('overlay'), resultCv = $('result'), finderMsg = $('finderMsg'), qual = $('qual');
+  const shootBtn = $('shoot'), errEl = $('err');
+  const work = document.createElement('canvas'), wctx = work.getContext('2d', { willReadFrequently: true });
+  let stream = null, liveTimer = null, shots = [], selShot = 0, shotTime = new Date();
+  const ROI = { x: 0.08, y: 0.11, w: 0.84, h: 0.78 };
+  const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const hexRGB = h => { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); };
+
+  // ---------------- 실시간 촬영 품질 체크 ----------------
+  function liveCheck() {
+    if (!video.videoWidth) return;
+    const vw = video.videoWidth, vh = video.videoHeight, W = 96, H = Math.round(96 * (vh * ROI.h) / (vw * ROI.w));
+    work.width = W; work.height = H;
+    wctx.drawImage(video, vw * ROI.x, vh * ROI.y, vw * ROI.w, vh * ROI.h, 0, 0, W, H);
+    const d = wctx.getImageData(0, 0, W, H).data; const n = W * H; let lean = 0, glare = 0, v = 0;
+    for (let i = 0; i < n; i++) { const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2]; v += Math.max(r, g, b);
+      const c = ScanCore.classify(r, g, b); if (c === 1) lean++; else if (c === 3) glare++; }
+    const bright = v / n / 255, fill = lean / n, gl = glare / n * 100;
+    const items = [
+      [fill > 0.25, fill > 0.25 ? '고기 인식' : '틀을 고기로 채우세요'],
+      [bright > 0.28 && bright < 0.92, bright <= 0.28 ? '너무 어두움' : bright >= 0.92 ? '너무 밝음' : '밝기 적정'],
+      [gl < 1.5, gl < 1.5 ? '반사 없음' : '반사광 있음 · 각도 조정'],
+    ];
+    qual.innerHTML = items.map(([ok, t]) => `<span class="${ok ? 'ok' : 'ng'}">${t}</span>`).join('');
+  }
+  function drawGuide() {
+    const r = overlay.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    overlay.width = r.width * dpr; overlay.height = r.height * dpr;
+    const g = overlay.getContext('2d'); g.scale(dpr, dpr);
+    const x = r.width * ROI.x, y = r.height * ROI.y, w = r.width * ROI.w, h = r.height * ROI.h;
+    g.fillStyle = 'rgba(0,0,0,0.45)'; g.fillRect(0, 0, r.width, r.height); g.clearRect(x, y, w, h);
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2; g.setLineDash([10, 6]); g.strokeRect(x, y, w, h);
+  }
+
+  // ---------------- 카메라 ----------------
+  async function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { finderMsg.textContent = '이 브라우저에서는 카메라를 쓸 수 없습니다. "사진 선택"으로 촬영해 주세요.'; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+      video.srcObject = stream; await video.play();
+      finderMsg.hidden = true; qual.hidden = false; shootBtn.disabled = false; drawGuide();
+      liveTimer = setInterval(liveCheck, 400);
+    } catch (e) {
+      finderMsg.textContent = e && e.name === 'NotAllowedError'
+        ? '카메라 권한이 거부되었습니다. 브라우저 설정에서 카메라를 허용하거나 "사진 선택"으로 촬영해 주세요.'
+        : '카메라를 열 수 없습니다. "사진 선택"으로 촬영해 주세요.';
+    }
+  }
+  const stopLive = () => { clearInterval(liveTimer); liveTimer = null; };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  async function shoot() {
+    shootBtn.disabled = true; errEl.hidden = true; const frames = [];
+    for (let i = 0; i < 3; i++) {
+      shootBtn.textContent = `촬영 중 ${i + 1}/3`;
+      const c = document.createElement('canvas'); c.width = video.videoWidth; c.height = video.videoHeight;
+      c.getContext('2d').drawImage(video, 0, 0); frames.push({ c, roi: ROI });
+      if (i < 2) await sleep(350);
+    }
+    shootBtn.textContent = '3장 연속 촬영';
+    process(frames);
+  }
+  function process(frames) {
+    stopLive();
+    shootBtn.textContent = '분석 중…';
+    setTimeout(() => {
+      shots = frames.map(f => { const r = ScanCore.analyze(f.c, f.c.width, f.c.height, f.roi, { max: 480 }); r.over = {}; r.src = f.c; r.fromFile = !!f.fromFile; return r; });
+      shotTime = new Date();
+      shootBtn.textContent = '3장 연속 촬영';
+      const ok = shots.filter(s => !s.error);
+      if (!ok.length) { showError(shots[0].error); return; }
+      selShot = shots.indexOf(ok[Math.floor(ok.length / 2)]);
+      $('afterShot').hidden = false; shootBtn.hidden = true; $('viewRow').hidden = false;
+      video.hidden = true; overlay.hidden = true; qual.hidden = true; resultCv.hidden = false;
+      renderThumbs(); renderAll();
+    }, 30);
+  }
+  function showError(msg) {
+    errEl.hidden = false; errEl.textContent = msg; shootBtn.disabled = !stream;
+    if (stream && !liveTimer) liveTimer = setInterval(liveCheck, 400);
+  }
+  function reset() {
+    shots = []; $('shots').innerHTML = ''; $('afterShot').hidden = true; $('saveMsg').hidden = true; shootBtn.hidden = false; $('viewRow').hidden = true;
+    resultCv.hidden = true; video.hidden = false; overlay.hidden = false; errEl.hidden = true; $('structPanel').hidden = true; $('legend').innerHTML = '';
+    if (stream) { qual.hidden = false; shootBtn.disabled = false; liveTimer = setInterval(liveCheck, 400); }
+    $('grade').textContent = '–'; $('gradeTitle').textContent = '촬영을 기다리는 중'; $('gradeSub').textContent = '단면 한 조각을 가이드 안에 맞추고 촬영하세요.';
+    $('metrics').innerHTML = '<li class="empty">결과가 여기에 표시됩니다. 사진은 기기 안에서만 처리되고 외부로 전송되지 않습니다.</li>';
+    renderScale(null);
+  }
+  function renderThumbs() {
+    const box = $('shots'); box.innerHTML = ''; if (shots.length < 2) return;
+    shots.forEach((s, i) => { const c = document.createElement('canvas'); c.width = s.W; c.height = s.H;
+      c.getContext('2d').putImageData(s.img, 0, 0); c.className = i === selShot ? 'sel' : ''; c.title = `${i + 1}번째 사진`;
+      c.addEventListener('click', () => { if (s.error) return; selShot = i; renderThumbs(); renderAll(); }); box.appendChild(c); });
+  }
+
+  // ---------------- 등심 구조 해석 ----------------
+  function effectivePos(s) {
+    if (cut !== 'loin') return { key: null };
+    if (pos !== 'auto') return { key: pos, auto: false };
+    if (origin === 'us') return { key: 'ribeye', auto: true, note: '자동 구분이 어려워 립아이로 가정했습니다. 위치를 골라 주세요.' };
+    if (s.tteokShare >= TH.tteok) return { key: 'flower', auto: true, note: '떡심이 보여 윗등심 또는 꽃등심입니다. 꽃등심으로 가정했으니 위치를 골라 주세요.' };
+    return { key: 'lower', auto: true, note: '떡심이 보이지 않아 아랫등심으로 추정했습니다. 떡심을 잘라낸 고기라면 위치를 직접 골라 주세요.' };
+  }
+  function autoLabels(s, pkey) {
+    const B = s.blocks, lab = {}; if (!B.length) return lab;
+    B.forEach(b => lab[b.id] = 'eye');
+    if (B.length === 1 || !pkey) return lab;
+    const eye = B[0];
+    if (pkey === 'upper' || pkey === 'chuck') {
+      const byMarb = [...B].sort((a, b) => b.marb - a.marb), med = byMarb[Math.floor(byMarb.length / 2)].marb;
+      const top = byMarb[0]; if (top.marb - med >= 3 || (B.length === 2 && top.marb - byMarb[1].marb >= 3)) lab[top.id] = 'sal';
+      if (B.length >= 3) { const low = byMarb.at(-1); if (lab[low.id] === 'eye') lab[low.id] = 'tough'; }
+    } else if (pkey === 'lower') {
+      B.slice(1).forEach(b => lab[b.id] = 'cap');
+    } else {
+      B.slice(1).forEach(b => lab[b.id] = b.marb >= eye.marb + 3 ? 'cap' : 'tough');
+    }
+    return lab;
+  }
+  function labelsFor(s) {
+    const p = effectivePos(s), auto = autoLabels(s, p.key), out = {};
+    s.blocks.forEach(b => { out[b.id] = (s.over[p.key] && s.over[p.key][b.id]) || auto[b.id]; });
+    return { p, labels: out };
+  }
+  function composition(s, labels) {
+    const tot = s.blocks.reduce((a, b) => a + b.area, 0) || 1, sh = { eye: 0, cap: 0, sal: 0, tough: 0 };
+    s.blocks.forEach(b => sh[labels[b.id]] += b.area / tot);
+    // 등급 산정용: 알등심으로 표시된 덩어리의 면적가중 근내지방
+    let ea = 0, em = 0; s.blocks.forEach(b => { if (labels[b.id] === 'eye') { ea += b.area; em += b.marb * b.area; } });
+    return { sh, eyeMarb: ea ? em / ea : s.ratioEye };
+  }
+  function valueOf(pkey, sh, nBlocks) {
+    const pct = v => Math.round(v * 100) + '%';
+    if (nBlocks < 2) return { rank: '–', title: '근육 덩어리를 나누지 못했습니다', desc: '근육 사이 지방 띠가 뚜렷하지 않거나 여러 조각이 겹쳐 찍혔습니다. 한 조각만 틀에 넣어 다시 찍으면 새우살·살치살 비율을 볼 수 있습니다.', r: 0 };
+    if (pkey === 'flower' || pkey === 'ribeye') {
+      if (sh.cap >= TH.capGood && sh.tough <= TH.toughLow) return { rank: '1', title: '최상 · 새우살 크고 덧살 적음', desc: `새우살 ${pct(sh.cap)}, 덧살 ${pct(sh.tough)}. 등심 가치 순서의 1순위 조건입니다.`, r: 1, ref: 1 };
+      if (sh.cap >= TH.capGood) return { rank: '3', title: '보통 · 덧살이 많음', desc: `새우살은 ${pct(sh.cap)}로 크지만 덧살이 ${pct(sh.tough)}입니다. 덧살은 식감이 가장 떨어집니다.`, r: 3 };
+      return { rank: '3', title: '보통 · 새우살이 작음', desc: `새우살 ${pct(sh.cap)}, 덧살 ${pct(sh.tough)}. 새우살이 클수록 좋습니다.`, r: 3 };
+    }
+    if (pkey === 'upper' || pkey === 'chuck') {
+      if (sh.tough >= TH.toughHigh) return { rank: '4', title: '하 · 질긴 근육이 많음', desc: `질긴 근 ${pct(sh.tough)}. 목심 쪽(1·2번 등뼈)일 가능성이 높아 구이용으로는 질길 수 있습니다.`, r: 4 };
+      if (sh.sal >= TH.salGood) return { rank: '2', title: '상 · 살치살이 넓음', desc: `살치살 ${pct(sh.sal)}. 살치살이 넓게 붙은 윗등심은 2순위입니다.`, r: 2, ref: 2 };
+      return { rank: '4', title: '중하 · 살치살이 적음', desc: `살치살 ${pct(sh.sal)}. 살치살이 적은 윗등심은 가치가 낮은 편입니다.`, r: 4, ref: 4 };
+    }
+    if (pkey === 'lower') {
+      if (sh.cap >= TH.capLower) return { rank: '3', title: '중상 · 새우살이 큼', desc: `새우살 ${pct(sh.cap)}. 새우살 큰 아랫등심은 3순위입니다.`, r: 3, ref: 3 };
+      return { rank: '3', title: '보통 · 알등심 위주', desc: `새우살 ${pct(sh.cap)}. 뒤쪽 아랫등심일수록 새우살이 작아집니다.`, r: 3 };
+    }
+    return { rank: '–', title: '', desc: '', r: 0 };
+  }
+
+  // ---------------- 화면 그리기 ----------------
+  function drawResult() {
+    const s = shots[selShot]; resultCv.width = s.W; resultCv.height = s.H;
+    const g = resultCv.getContext('2d');
+    if (view === 'orig' || s.error) { g.putImageData(s.img, 0, 0); $('legend').innerHTML = ''; return; }
+    const N = s.W * s.H, out = new ImageData(s.W, s.H), a = out.data, d = s.img.data;
+    const M = hexRGB(css('--meat')), F = hexRGB(css('--fat')), SEAM = hexRGB(css('--m-seam')), TT = hexRGB(css('--m-tteok'));
+    const { p, labels } = labelsFor(s), lc = {};
+    if (view === 'muscle') s.blocks.forEach(b => lc[b.id] = hexRGB(css(LCOLOR[labels[b.id]])));
+    for (let i = 0; i < N; i++) { const o = i * 4; let r = d[o], gg = d[o + 1], b = d[o + 2];
+      if (!s.core[i]) { const gr = (r + gg + b) / 3 * 0.3; r = gg = b = gr; }
+      else if (s.tteok[i]) { [r, gg, b] = TT; }
+      else if (s.seam[i]) { [r, gg, b] = SEAM; }
+      else if (view === 'fat') { if (s.fat[i]) [r, gg, b] = F; }
+      else { const c = lc[s.blockLab[i]]; if (c) { const k = s.fat[i] ? 0.35 : 0.6; r = r * (1 - k) + c[0] * k; gg = gg * (1 - k) + c[1] * k; b = b * (1 - k) + c[2] * k; } }
+      a[o] = r; a[o + 1] = gg; a[o + 2] = b; a[o + 3] = 255; }
+    g.putImageData(out, 0, 0);
+    if (view === 'muscle') {
+      const fs = Math.max(11, Math.round(Math.max(s.W, s.H) / 26));
+      g.font = `700 ${fs}px ${css('--font-body')}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      s.blocks.forEach(b => { const t = nameOf(labels[b.id], p.key);
+        g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.75)'; g.strokeText(t, b.cx, b.cy); g.fillStyle = '#fff'; g.fillText(t, b.cx, b.cy); });
+      const used = [...new Set(Object.values(labels))];
+      $('legend').innerHTML = used.map(l => `<span><i style="background:var(${LCOLOR[l]})"></i>${nameOf(l, p.key)}</span>`).join('') +
+        '<span><i style="background:var(--m-seam)"></i>근육 사이 지방</span>' + (s.tteokShare > 0 ? '<span><i style="background:var(--m-tteok)"></i>떡심 추정</span>' : '');
+    } else {
+      $('legend').innerHTML = '<span><i style="background:var(--fat)"></i>근내지방(마블링)</span><span><i style="background:var(--m-seam)"></i>근육 사이 지방(등급 계산 제외)</span>' +
+        (s.tteokShare > 0 ? '<span><i style="background:var(--m-tteok)"></i>떡심 추정</span>' : '');
+    }
+  }
+  const nameOf = (l, pkey) => l === 'tough' ? ((POS[pkey] && POS[pkey].tough) || '덧살').replace(/\(.*\)/, '') : LNAME[l];
+
+  function renderScale(res) {
+    const cfg = CUTS[cut], bands = cfg.bands, top = bands.at(-1)[0];
+    let prev = 0;
+    $('bar').style.gridTemplateColumns = bands.map(b => { const w = b[0] - prev; prev = b[0]; return w + 'fr'; }).join(' ');
+    const band = res ? bands.find(b => res.mid < b[0]) || bands.at(-1) : null;
+    const X = v => Math.min(100, v / top * 100);
+    $('bar').innerHTML = bands.map(b => `<span class="${band && b === band ? 'on' : ''}">${b[1]}</span>`).join('') +
+      (res ? `<div class="range" style="left:${X(res.lo)}%;width:${Math.max(0, X(res.hi) - X(res.lo))}%"></div><div class="marker" style="left:${X(res.mid)}%"></div>` : '');
+    $('ticks').innerHTML = `<span style="left:0;transform:none">0%</span>` + bands.slice(0, -1).map(b => `<span style="left:${X(b[0])}%">${b[0]}</span>`).join('') + `<span style="left:100%;transform:translateX(-100%)">${top}%</span>`;
+    $('scaleLabel').textContent = cfg.official ? '근내지방 면적비 기준 구간 (육질등급)' : `근내지방 면적비 기준 구간 (${cfg.name} 상대 수준)`;
+    $('basis').textContent = cfg.official
+      ? '등급 구간은 축산물품질평가원 기준의 지방 함량 구간(3등급 1~5%, 2등급 5~9%, 1등급 9~12.3%, 1+ 12.3~15.6%, 1++ 15.6% 이상)에 사진상 지방 면적비를 대응한 근사치입니다. 공식 판정처럼 주 근육(알등심)의 근내지방만 계산하고, 근육 사이의 굵은 지방 띠는 뺍니다. 실제 등급은 육색·지방색·조직감·성숙도까지 반영해 평가사가 판정합니다.'
+      : `${cfg.name}은 공식 육질등급 판정 부위가 아니어서 같은 부위끼리 비교한 상대 수준으로 표시합니다. 구간 경계는 실측 데이터로 보정하기 전의 임시값입니다.`;
+    return band;
+  }
+  function renderHints() {
+    const loin = cut === 'loin';
+    $('loinBox').hidden = !loin;
+    $('posKr').hidden = origin !== 'kr'; $('posUs').hidden = origin !== 'us';
+    document.querySelectorAll('#origin button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.o === origin)));
+    document.querySelectorAll('#posKr button, #posUs button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.p === pos)));
+    document.querySelectorAll('#cuts button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cut === cut)));
+    $('cuthint').textContent = loin ? (pos !== 'auto' && POS[pos] ? POS[pos].hint : '포장 라벨에 위치(윗·꽃·아랫등심)가 있으면 골라 주세요. 모르면 자동으로 두세요.') : CUTS[cut].hint;
+    $('views').querySelector('[data-v="muscle"]').hidden = false;
+    document.querySelectorAll('#views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === view)));
+    $('viewHint').textContent = view === 'muscle' && loin ? '덩어리를 누르면 이름을 바꿀 수 있습니다.' : '';
+  }
+
+  function renderAll() {
+    renderHints();
+    if (!shots.length) { renderScale(null); return; }
+    drawResult();
+    const ok = shots.filter(s => !s.error), s = shots[selShot];
+    const per = ok.map(x => composition(x, labelsFor(x).labels).eyeMarb), rs = [...per].sort((a, b) => a - b);
+    const mid = rs[Math.floor(rs.length / 2)], lo = rs[0], hi = rs.at(-1), spread = hi - lo;
+    const cfg = CUTS[cut], band = renderScale({ mid, lo, hi });
+    const { p, labels } = labelsFor(s), comp = composition(s, labels);
+    $('grade').textContent = band[1];
+    const posName = p.key ? POS[p.key].name : cfg.name;
+    $('gradeTitle').textContent = cfg.official ? `${posName} 추정 육질등급 ${band[1]}` : `${cfg.name} 마블링 수준 ${band[1]}`;
+    $('gradeSub').textContent = (cfg.official ? `근내지방도 ${band[2]} 구간 · ` : '') + `근내지방 ${mid.toFixed(1)}%` +
+      (ok.length > 1 ? ` (${ok.length}장 범위 ${lo.toFixed(1)}~${hi.toFixed(1)}%)` : '') + (cfg.official && origin === 'us' && cut === 'loin' ? ` · USDA ${USDA[band[1]]}(참고)` : '');
+
+    const fine = s.partFrac < 0.6 ? ['섬세', 'good', '작은 지방 입자가 고르게 퍼져 있습니다.'] : s.partFrac < 2 ? ['보통', 'warn', '굵은 지방 줄기가 일부 섞여 있습니다.'] : ['거침', 'bad', '지방이 굵게 뭉쳐 있습니다. 같은 등급 안에서 선호도가 낮을 수 있습니다.'];
+    let lc;
+    if (!s.leanLab) lc = ['판단 불가', 'warn', ''];
+    else if (s.leanLab[0] < 30) lc = ['암적색', 'warn', '어둡게 보입니다. 산화·장기 보관 또는 촬영 노출 부족일 수 있습니다.'];
+    else if (s.leanLab[1] < 22) lc = ['갈변 의심', 'bad', '붉은 기가 약합니다. 신선도를 확인하세요.'];
+    else lc = ['선홍색', 'good', '신선한 쇠고기의 밝은 적색 범위입니다.'];
+    let fcl;
+    if (!s.fatLab) fcl = ['판단 불가', 'warn', '지방이 거의 검출되지 않았습니다.'];
+    else if (s.fatLab[2] < 14) fcl = ['백색', 'good', '희고 깨끗한 지방색입니다.'];
+    else if (s.fatLab[2] < 22) fcl = ['유백색', 'good', '정상 범위의 크림색 지방입니다.'];
+    else fcl = ['황색', 'warn', '지방이 누렇게 보입니다. 고령우·사료 영향 또는 조명 색일 수 있습니다.'];
+    const issues = [];
+    if (s.glarePct > 2) issues.push(`반사광 ${s.glarePct.toFixed(1)}%`);
+    if (s.coverPct < 25) issues.push('고기가 틀을 덜 채움');
+    if (s.brightness < 0.28) issues.push('어두움');
+    if (ok.length > 1 && spread > 3) issues.push(`사진 간 편차 ${spread.toFixed(1)}%p`);
+    const q = issues.length ? ['재촬영 권장', 'warn', issues.join(', ') + '.'] : ['양호', 'good', ok.length > 1 ? `${ok.length}장의 결과가 서로 가깝습니다.` : '반사광과 화면 비율이 분석 기준 안에 있습니다.'];
+    const row = (k, v, pl, desc) => `<li><span class="k">${k}</span><span class="v">${v}${pl ? ` <span class="pill ${pl[1]}">${pl[0]}</span>` : ''}</span><span class="d">${desc}</span></li>`;
+    $('metrics').innerHTML =
+      row('근내지방 (주 근육)', `${comp.eyeMarb.toFixed(1)}%`, null, '알등심(주 근육) 안의 마블링 비율입니다. 화소보다 작은 마블링은 색이 섞인 정도로 비율을 환산했습니다.') +
+      row('단면 전체 지방', `${s.ratioAll.toFixed(1)}%`, null, `근육 사이 굵은 지방 띠 ${s.seamShare.toFixed(1)}%를 포함한 값입니다. 등급 계산에는 쓰지 않습니다.`) +
+      row('마블링 섬세함', `${s.parts}개`, fine, `주 근육의 지방 입자 수와 평균 크기로 판단합니다. ${fine[2]}`) +
+      row('육색', s.leanLab ? `L* ${s.leanLab[0].toFixed(0)} · a* ${s.leanLab[1].toFixed(0)}` : '–', lc, lc[2]) +
+      row('지방색', s.fatLab ? `b* ${s.fatLab[2].toFixed(0)}` : '–', fcl, fcl[2]) +
+      row('촬영 품질', '', q, q[2]);
+
+    // 등심 구조 카드
+    const sp = $('structPanel');
+    if (cut !== 'loin') { sp.hidden = true; return; }
+    sp.hidden = false;
+    const pi = POS[p.key], v = valueOf(p.key, comp.sh, s.blocks.length);
+    $('posPill').textContent = p.auto ? `${pi.name} 추정` : pi.name;
+    $('posPill').className = 'pill ' + (p.auto ? 'warn' : 'good');
+    $('tierRank').textContent = v.ref ? String(v.ref) : '–'; $('tierTitle').textContent = v.title; $('tierDesc').textContent = (p.note ? p.note + ' ' : '') + v.desc;
+    const order = pi.labels;
+    $('comp').innerHTML = order.map(l => comp.sh[l] > 0 ? `<span style="width:${comp.sh[l] * 100}%;background:var(${LCOLOR[l]})" title="${nameOf(l, p.key)}"></span>` : '').join('');
+    const facts = order.map(l => [nameOf(l, p.key), Math.round(comp.sh[l] * 100) + '%', l]);
+    facts.push(['떡심', origin === 'us' ? '해당 없음' : (s.tteokShare >= TH.tteok ? `있음 (${s.tteokShare.toFixed(1)}%)` : '보이지 않음')]);
+    facts.push(['근육 덩어리 수', `${s.blocks.length}개`]);
+    $('facts').innerHTML = facts.map(f => `<li><span>${f[2] ? `<i style="display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;background:var(${LCOLOR[f[2]]})"></i>` : ''}${f[0]}</span><span>${f[1]}</span></li>`).join('');
+    $('tip').textContent = pi.tip;
+    document.querySelectorAll('#rankref li').forEach(li => li.classList.toggle('me', +li.dataset.r === v.ref));
+  }
+
+  // 근육 구분 보기에서 덩어리를 누르면 이름을 순환
+  resultCv.addEventListener('click', e => {
+    if (view !== 'muscle' || cut !== 'loin' || !shots.length) return;
+    const s = shots[selShot]; if (s.error) return;
+    const r = resultCv.getBoundingClientRect(), sc = Math.min(r.width / s.W, r.height / s.H);
+    const ox = (r.width - s.W * sc) / 2, oy = (r.height - s.H * sc) / 2;
+    const x = Math.floor((e.clientX - r.left - ox) / sc), y = Math.floor((e.clientY - r.top - oy) / sc);
+    if (x < 0 || y < 0 || x >= s.W || y >= s.H) return;
+    const id = s.blockLab[y * s.W + x]; if (!id) return;
+    const { p, labels } = labelsFor(s), set = POS[p.key].labels, cur = labels[id];
+    const next = set[(set.indexOf(cur) + 1) % set.length];
+    (s.over[p.key] = s.over[p.key] || {})[id] = next;
+    renderAll();
+  });
+
+  // ---------------- 사진 저장 ----------------
+  // 아이폰은 공유 창의 "이미지 저장"으로 사진첩에 저장되고, 공유를 지원하지 않는 브라우저는 다운로드 폴더에 저장된다.
+  // 공유 창은 버튼을 누른 직후에만 열 수 있어서 이미지를 동기 방식(toDataURL)으로 만든다.
+  const pad = n => String(n).padStart(2, '0');
+  const stamp = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  function dataUrlToFile(url, name) {
+    const bin = atob(url.split(',')[1]), u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return new File([u8], name, { type: 'image/jpeg' });
+  }
+  function analysisImage() {
+    const s = shots[selShot], k = Math.max(1, Math.round(900 / s.W)), W = s.W * k, Hi = s.H * k;
+    const lines = [$('gradeTitle').textContent, $('gradeSub').textContent];
+    if (cut === 'loin' && !$('structPanel').hidden) lines.push(`${$('posPill').textContent} · ${$('tierTitle').textContent}`);
+    lines.push(`마블 스캔 v0.3.1 · ${shotTime.toLocaleString('ko-KR')} · 추정치이며 공식 등급이 아닙니다`);
+    const fs = Math.round(W / 34), lh = Math.round(fs * 1.5), foot = lh * lines.length + fs;
+    const c = document.createElement('canvas'); c.width = W; c.height = Hi + foot;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    g.drawImage(resultCv, 0, 0, W, Hi);
+    g.fillStyle = '#1b1f22'; g.fillRect(0, Hi, W, foot);
+    g.textBaseline = 'top';
+    lines.forEach((t, i) => { g.font = `${i === 0 ? 700 : 400} ${i === 0 ? fs : Math.round(fs * 0.85)}px ${css('--font-body')}`;
+      g.fillStyle = i === lines.length - 1 ? '#9aa3a9' : '#ffffff'; g.fillText(t, Math.round(fs * 0.6), Hi + Math.round(fs * 0.5) + i * lh); });
+    return c.toDataURL('image/jpeg', 0.9);
+  }
+  async function saveShots() {
+    if (!shots.length) return;
+    const s = shots[selShot], msg = $('saveMsg'), base = `marble_${stamp(shotTime)}`;
+    const files = [dataUrlToFile(analysisImage(), `${base}_분석.jpg`)];
+    if (!s.fromFile && s.src) files.unshift(dataUrlToFile(s.src.toDataURL('image/jpeg', 0.92), `${base}_원본.jpg`));
+    const say = (t, bad) => { msg.textContent = t; msg.className = 'savemsg' + (bad ? ' bad' : ''); msg.hidden = false; };
+    try {
+      if (navigator.canShare && navigator.canShare({ files })) {
+        await navigator.share({ files });
+        say(`${files.length}장을 공유 창으로 넘겼습니다. "이미지 저장"을 고르면 사진첩에 저장됩니다.`);
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') { say('저장을 취소했습니다.', true); return; }
+    }
+    files.forEach((f, i) => setTimeout(() => {
+      const a = document.createElement('a'), url = URL.createObjectURL(f);
+      a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    }, i * 400));
+    say(`${files.length}장을 다운로드 폴더에 저장했습니다. 갤러리 앱의 "다운로드" 앨범에서 볼 수 있습니다.`);
+  }
+
+  // ---------------- 이벤트 ----------------
+  $('save').addEventListener('click', saveShots);
+  document.querySelectorAll('#cuts button').forEach(b => b.addEventListener('click', () => { cut = b.dataset.cut; store.set('ms.cut', cut); renderAll(); }));
+  document.querySelectorAll('#origin button').forEach(b => b.addEventListener('click', () => { origin = b.dataset.o; store.set('ms.origin', origin); pos = 'auto'; store.set('ms.pos', pos); renderAll(); }));
+  document.querySelectorAll('#posKr button, #posUs button').forEach(b => b.addEventListener('click', () => { pos = b.dataset.p; store.set('ms.pos', pos); renderAll(); }));
+  document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => { view = b.dataset.v; renderAll(); }));
+  shootBtn.addEventListener('click', shoot);
+  $('again').addEventListener('click', reset);
+  $('file').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return; const url = URL.createObjectURL(f), im = new Image();
+    im.onload = () => { const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight; c.getContext('2d').drawImage(im, 0, 0); URL.revokeObjectURL(url);
+      process([{ c, roi: { x: 0, y: 0, w: 1, h: 1 }, fromFile: true }]); e.target.value = ''; };
+    im.onerror = () => showError('이미지를 열 수 없습니다. JPG 또는 PNG 사진을 사용해 주세요.');
+    im.src = url;
+  });
+  window.addEventListener('resize', () => { if (!overlay.hidden) drawGuide(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopLive(); else if (stream && !shots.length && !liveTimer) liveTimer = setInterval(liveCheck, 400); });
+  if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) $('install').hidden = true;
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+  if (origin === 'us' && !['auto', 'chuck', 'ribeye'].includes(pos)) pos = 'auto';
+  if (origin === 'kr' && !['auto', 'upper', 'flower', 'lower'].includes(pos)) pos = 'auto';
+
+  renderAll();
+  startCamera();
+  window.__ms = { get shots() { return shots; }, process };
+})();
+</script>
+</body>
+</html>
