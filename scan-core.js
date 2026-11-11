@@ -75,6 +75,80 @@
     return v > 0.5 && s > 0.18 && s < 0.75 && r >= g && g > b * 1.15 && (r - g) < 70;
   }
 
+
+  // ---------------- 등급 판정식 (AI허브 '축산물 품질(QC) 이미지' 도체 사진 400장으로 보정) ----------------
+  // 지표: area(지방 면적 지수), hf(결의 섬세함), smallDens(미세 지방 입자 밀도), Am(살코기 붉은 기)
+  // 교차검증: 5등급 정확히 맞힘 43%, ±1등급 이내 78%
+  const MODEL = { b0: 1.964, beta: [0.052, 0.658, 0.038, -0.537], mu: [19.215, 5.833, 5.298, 27.518], sd: [9.569, 2.596, 3.216, 6.022],
+    cuts: [1.479, 1.489, 2.306, 2.502], grades: ['3', '2', '1', '1+', '1++'], acc: { exact: 43, within1: 78, n: 400 } };
+  const ZREF_DEFAULT = 72; // 기준 지방이 화면에 없을 때 쓰는 값(보정 데이터 중앙값)
+
+  function boxBlur(src, W, H, r) {
+    const N = W * H, t = new Float32Array(N), o = new Float32Array(N), cl = (v, a) => v < 0 ? 0 : v > a ? a : v;
+    for (let y = 0; y < H; y++) { let s = 0; for (let x = -r; x <= r; x++) s += src[y * W + cl(x, W - 1)];
+      for (let x = 0; x < W; x++) { t[y * W + x] = s / (2 * r + 1); s += src[y * W + cl(x + r + 1, W - 1)] - src[y * W + cl(x - r, W - 1)]; } }
+    for (let x = 0; x < W; x++) { let s = 0; for (let y = -r; y <= r; y++) s += t[cl(y, H - 1) * W + x];
+      for (let y = 0; y < H; y++) { o[y * W + x] = s / (2 * r + 1); s += t[cl(y + r + 1, H - 1) * W + x] - t[cl(y - r, H - 1) * W + x]; } }
+    return o;
+  }
+  const pctOf = (arr, q) => { const s = Float32Array.from(arr).sort(); return s.length ? s[Math.min(s.length - 1, Math.floor(s.length * q))] : 0; };
+
+  // region: 고기 영역 마스크. pix: {W,H,L,A,V,S}
+  function gradeFeatures(pix, region) {
+    const { W, H, L, A, V, S } = pix, N = W * H;
+    let area = 0; for (let i = 0; i < N; i++) area += region[i];
+    const diam = Math.sqrt(area), core = erode(region, W, H, Math.max(1, Math.round(diam * 0.06)));
+    const lL = [], lA = []; let nc = 0;
+    for (let i = 0; i < N; i++) if (core[i]) { nc++; if (A[i] > 15 && S[i] > 0.3) { lL.push(L[i]); lA.push(A[i]); } }
+    if (nc < 200 || lL.length < 50) return null;
+    const Lm = pctOf(lL, 0.5), Am = pctOf(lA, 0.5);
+    const z = new Float32Array(N); for (let i = 0; i < N; i++) z[i] = (L[i] - Lm) - 0.8 * (A[i] - Am);
+    const ref = []; for (let i = 0; i < N; i++) if (!region[i] && V[i] > 0.45 && S[i] < 0.45) ref.push(z[i]);
+    const zref = ref.length > N * 0.01 ? Math.max(25, pctOf(ref, 0.7)) : ZREF_DEFAULT;
+    const rs = Math.max(2, Math.round(diam * 0.015));
+    const b1 = boxBlur(z, W, H, 1), bs = boxBlur(z, W, H, rs);
+    let hf = 0, a25 = 0; const fm = new Uint8Array(N);
+    for (let i = 0; i < N; i++) { if (!core[i]) continue; hf += Math.abs(b1[i] - bs[i]); if (z[i] > 0.25 * zref) { a25++; fm[i] = 1; } }
+    const cc = components(fm, W, H, false), small = cc.sizes.slice(1).filter(s => s <= Math.max(4, nc / 1000 * 0.5)).length;
+    const f = { area: a25 / nc * 100, hf: hf / nc / zref * 100, smallDens: small / nc * 1000, Am, zref, refFound: ref.length > N * 0.01 };
+    let s = MODEL.b0; [f.area, f.hf, f.smallDens, f.Am].forEach((v, k) => s += MODEL.beta[k] * (v - MODEL.mu[k]) / MODEL.sd[k]);
+    let gi = 0; for (const c of MODEL.cuts) if (s >= c) gi++;
+    return { ...f, s, gi, grade: MODEL.grades[gi], score: Math.round(Math.min(100, Math.max(0, s / 4 * 100))), core, fm };
+  }
+
+  // 화면 안의 고기 덩어리 여러 개 찾기 (여러 팩 비교용)
+  function findRegions(lean, W, H, maxN) {
+    const N = W * H, cc = components(dilate(lean, W, H, 2), W, H, false);
+    const ids = cc.sizes.map((s, l) => [s, l]).filter(([s, l]) => l && s >= N * 0.025).sort((a, b) => b[0] - a[0]).slice(0, maxN);
+    const k = Math.max(3, Math.round(Math.max(W, H) * 0.015));
+    return ids.map(([s, l]) => { const m = new Uint8Array(N); for (let i = 0; i < N; i++) if (cc.lab[i] === l) m[i] = 1;
+      return erode(fillHoles(dilate(m, W, H, k), W, H), W, H, k); });
+  }
+
+  function pixelsOf(d, N) {
+    const L = new Float32Array(N), A = new Float32Array(N), V = new Float32Array(N), S = new Float32Array(N), lean = new Uint8Array(N);
+    for (let i = 0; i < N; i++) { const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], lab = toLab(r, g, b);
+      L[i] = lab[0]; A[i] = lab[1]; const mx = Math.max(r, g, b), mn = Math.min(r, g, b); V[i] = mx / 255; S[i] = mx ? (mx - mn) / mx : 0;
+      if (classify(r, g, b) === 1) lean[i] = 1; }
+    return { L, A, V, S, lean };
+  }
+
+  // 여러 팩 비교: 한 장의 사진에서 고기 덩어리를 찾아 각각 판정
+  function compare(src, sw, sh, roi, opts) {
+    roi = roi || { x: 0, y: 0, w: 1, h: 1 }; opts = opts || {};
+    const max = opts.max || 640, cw = sw * roi.w, ch = sh * roi.h, sc = Math.min(1, max / Math.max(cw, ch));
+    const W = Math.max(1, Math.round(cw * sc)), H = Math.max(1, Math.round(ch * sc)), N = W * H;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d', { willReadFrequently: true }); g.drawImage(src, sw * roi.x, sh * roi.y, cw, ch, 0, 0, W, H);
+    const img = g.getImageData(0, 0, W, H), px = pixelsOf(img.data, N);
+    const regions = findRegions(px.lean, W, H, opts.maxN || 6);
+    const pix = { W, H, ...px };
+    const items = regions.map(reg => { const f = gradeFeatures(pix, reg); if (!f) return null;
+      let sx = 0, sy = 0, n = 0; for (let i = 0; i < N; i++) if (reg[i]) { sx += i % W; sy += (i / W) | 0; n++; }
+      return { ...f, region: reg, cx: sx / n, cy: sy / n, size: n / N }; }).filter(Boolean);
+    return { img, W, H, items };
+  }
+
   function analyze(src, sw, sh, roi, opts) {
     roi = roi || { x: 0, y: 0, w: 1, h: 1 }; opts = opts || {};
     const max = opts.max || 360, cw = sw * roi.w, ch = sh * roi.h, sc = Math.min(1, max / Math.max(cw, ch));
@@ -95,14 +169,25 @@
     const brightness = vSum / N / 255;
     const lean = lean0;
 
-    // 고기 영역
-    const cc = components(dilate(lean, W, H, 2), W, H, false);
-    let best = 0; for (let i = 1; i < cc.sizes.length; i++) if (cc.sizes[i] > (cc.sizes[best] || 0)) best = i;
-    if (!best || cc.sizes[best] < N * 0.08) return { img, W, H, error: '가이드 틀 안에서 고기 단면을 찾지 못했습니다. 틀을 고기로 가득 채워 다시 찍어 주세요.' };
-    const main = new Uint8Array(N); for (let i = 0; i < N; i++) main[i] = cc.lab[i] === best ? 1 : 0;
-    const k = Math.max(3, Math.round(Math.max(W, H) * 0.03));
-    const region = erode(fillHoles(dilate(main, W, H, k), W, H), W, H, k);
-    const core = erode(region, W, H, Math.max(2, Math.round(k * 0.8)));
+    // 고기 영역: 윤곽 좌표(opts.polygon, 원본 화소 좌표)가 주어지면 그 안만 측정한다 (데이터 보정용)
+    let region, core;
+    if (opts.polygon) {
+      const pc = document.createElement('canvas'); pc.width = W; pc.height = H;
+      const pg = pc.getContext('2d'); pg.fillStyle = '#fff'; pg.beginPath();
+      opts.polygon.forEach(([x, y], j) => { const px = (x - sw * roi.x) * sc, py = (y - sh * roi.y) * sc; if (j) pg.lineTo(px, py); else pg.moveTo(px, py); });
+      pg.closePath(); pg.fill();
+      const pd = pg.getImageData(0, 0, W, H).data; region = new Uint8Array(N);
+      for (let i = 0; i < N; i++) region[i] = pd[i * 4] > 127 ? 1 : 0;
+      core = erode(region, W, H, 2);
+    } else {
+      const cc = components(dilate(lean, W, H, 2), W, H, false);
+      let best = 0; for (let i = 1; i < cc.sizes.length; i++) if (cc.sizes[i] > (cc.sizes[best] || 0)) best = i;
+      if (!best || cc.sizes[best] < N * 0.08) return { img, W, H, error: '가이드 틀 안에서 고기 단면을 찾지 못했습니다. 틀을 고기로 가득 채워 다시 찍어 주세요.' };
+      const main = new Uint8Array(N); for (let i = 0; i < N; i++) main[i] = cc.lab[i] === best ? 1 : 0;
+      const k = Math.max(3, Math.round(Math.max(W, H) * 0.03));
+      region = erode(fillHoles(dilate(main, W, H, k), W, H), W, H, k);
+      core = erode(region, W, H, Math.max(2, Math.round(k * 0.8)));
+    }
     let nc = 0; for (let i = 0; i < N; i++) nc += core[i];
     if (nc < 400) return { img, W, H, error: '분석할 영역이 너무 작습니다. 조금 더 가까이에서 찍어 주세요.' };
 
@@ -188,7 +273,10 @@
     const fc = components(eye ? eyeFat : fineFat, W, H, true), parts = fc.sizes.slice(1).filter(s => s >= 2);
     const meanPart = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : 0;
 
-    return { img, W, H, core, fat, fineFat, seam, tteok, blockLab, blocks,
+    const V = new Float32Array(N), S = new Float32Array(N);
+    for (let i = 0; i < N; i++) { const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b); V[i] = mx / 255; S[i] = mx ? (mx - mn) / mx : 0; }
+    const cal = gradeFeatures({ W, H, L: Lc, A: Ac, V, S }, region);
+    return { img, W, H, core, fat, fineFat, seam, tteok, blockLab, blocks, soft, cal,
       ratioAll: vAll ? sAll / vAll * 100 : 0,
       ratioEye: eye ? eye.marb : (vAll ? sAll / vAll * 100 : 0),
       seamShare: nseam / nc * 100, tteokShare: tteokArea / nc * 100,
@@ -198,5 +286,5 @@
       glarePct: ng / nc * 100, coverPct: nc / N * 100, brightness };
   }
 
-  window.ScanCore = { analyze, classify };
+  window.ScanCore = { analyze, compare, classify, MODEL };
 })();
