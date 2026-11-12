@@ -135,7 +135,7 @@ h1 span { color: var(--meat); }
 <div class="wrap">
   <header>
     <h1>마블 스캔 <span>단면 품질 추정</span></h1>
-    <span class="ver">v0.4 프로토타입</span>
+    <span class="ver">v0.4.1 프로토타입</span>
   </header>
 
   <div class="grid">
@@ -523,7 +523,7 @@ h1 span { color: var(--meat); }
       $('legend').innerHTML = used.map(l => `<span><i style="background:var(${LCOLOR[l]})"></i>${nameOf(l, p.key)}</span>`).join('') +
         '<span><i style="background:var(--m-seam)"></i>근육 사이 지방</span>' + (s.tteokShare > 0 ? '<span><i style="background:var(--m-tteok)"></i>떡심 추정</span>' : '');
     } else {
-      $('legend').innerHTML = '<span><i style="background:var(--fat)"></i>마블링으로 판별한 부분</span><span><i style="background:var(--m-seam)"></i>근육 사이 지방</span>' +
+      $('legend').innerHTML = '<span><i style="background:var(--fat)"></i>마블링으로 판별한 부분(주 근육 안)</span><span><i style="background:var(--m-seam)"></i>근육 사이 지방</span>' +
         (s.tteokShare > 0 ? '<span><i style="background:var(--m-tteok)"></i>떡심 추정</span>' : '');
     }
   }
@@ -620,7 +620,7 @@ h1 span { color: var(--meat); }
     const row = (k, v, pl, desc) => `<li><span class="k">${k}</span><span class="v">${v}${pl ? ` <span class="pill ${pl[1]}">${pl[0]}</span>` : ''}</span><span class="d">${desc}</span></li>`;
     $('metrics').innerHTML =
       row('마블링 점수', `${score}/100`, null, '지방 면적, 결의 섬세함, 미세 지방 입자 밀도, 살코기 붉은 기를 합친 점수입니다. 실제 등급 판정 사진 400장으로 가중치를 맞췄습니다.') +
-      row('지방 면적 지수', s.cal.area.toFixed(1), null, '사진 밝기에 맞춰 판별한 마블링 면적 비율(%)입니다. 등심 가장자리는 빼고 잽니다. 공식 지방 함량(%)과는 단위가 달라 직접 비교할 수 없습니다.') +
+      row('지방 면적 지수', s.cal.area.toFixed(1), null, '가장 큰 근육 덩어리(주 근육) 안에서, 사진 밝기에 맞춰 판별한 마블링 면적 비율(%)입니다. 가장자리는 빼고 잽니다. 공식 지방 함량(%)과는 단위가 달라 직접 비교할 수 없습니다.') +
       row('결의 섬세함', hfv.toFixed(1), fine, fine[2]) +
       row('육색', s.leanLab ? `L* ${s.leanLab[0].toFixed(0)} · a* ${s.leanLab[1].toFixed(0)}` : '–', lc, lc[2]) +
       row('지방색', s.fatLab ? `b* ${s.fatLab[2].toFixed(0)}` : '–', fcl, fcl[2]) +
@@ -675,7 +675,7 @@ h1 span { color: var(--meat); }
       ? ['여러 팩 비교 (같은 사진 안 상대 순위)', [...multi.items].sort((a, b) => b.score - a.score).map((it, i) => `${i + 1}위 ${it.name} ${it.score}점`).join(' · ')]
       : [$('gradeTitle').textContent, $('gradeSub').textContent];
     if (mode !== 'multi' && cut === 'loin' && !$('structPanel').hidden) lines.push(`${$('posPill').textContent} · ${$('tierTitle').textContent}`);
-    lines.push(`마블 스캔 v0.4 · ${shotTime.toLocaleString('ko-KR')} · 추정치이며 공식 등급이 아닙니다`);
+    lines.push(`마블 스캔 v0.4.1 · ${shotTime.toLocaleString('ko-KR')} · 추정치이며 공식 등급이 아닙니다`);
     const fs = Math.round(W / 34), lh = Math.round(fs * 1.5), foot = lh * lines.length + fs;
     const c = document.createElement('canvas'); c.width = W; c.height = Hi + foot;
     const g = c.getContext('2d'); g.imageSmoothingEnabled = false;

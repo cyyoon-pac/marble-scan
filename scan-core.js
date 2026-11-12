@@ -275,8 +275,13 @@
 
     const V = new Float32Array(N), S = new Float32Array(N);
     for (let i = 0; i < N; i++) { const r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2], mx = Math.max(r, g, b), mn = Math.min(r, g, b); V[i] = mx / 255; S[i] = mx ? (mx - mn) / mx : 0; }
-    const cal = gradeFeatures({ W, H, L: Lc, A: Ac, V, S }, region);
-    return { img, W, H, core, fat, fineFat, seam, tteok, blockLab, blocks, soft, cal,
+    const pixAll = { W, H, L: Lc, A: Ac, V, S };
+    const calRegion = gradeFeatures(pixAll, region);
+    // 주 근육(가장 큰 근육 덩어리)만으로도 판정: 보정 데이터가 등심 주 근육 윤곽 안쪽만 잰 것이라 조건이 같다
+    let calEye = null;
+    if (blocks.length && !opts.polygon) { const em = new Uint8Array(N); const id = blocks[0].id; for (let i = 0; i < N; i++) if (blockLab[i] === id) em[i] = 1; calEye = gradeFeatures(pixAll, em); }
+    const cal = (opts.calMode === 'region' ? calRegion : (calEye || calRegion));
+    return { img, W, H, core, fat, fineFat, seam, tteok, blockLab, blocks, soft, cal, calRegion, calEye,
       ratioAll: vAll ? sAll / vAll * 100 : 0,
       ratioEye: eye ? eye.marb : (vAll ? sAll / vAll * 100 : 0),
       seamShare: nseam / nc * 100, tteokShare: tteokArea / nc * 100,

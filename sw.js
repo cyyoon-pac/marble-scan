@@ -1,5 +1,5 @@
 // 오프라인 지원: 앱 파일을 캐시하고, 네트워크가 없으면 캐시에서 연다.
-const CACHE = 'marble-scan-v0.4';
+const CACHE = 'marble-scan-v0.4.1';
 const FILES = ['./', 'index.html', 'scan-core.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
